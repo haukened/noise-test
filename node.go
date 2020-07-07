@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/perlin-network/noise"
@@ -68,9 +67,9 @@ func (n *ServerNode) StartDiscovery(interval int) {
 			select {
 			case <-n.stopDiscovery:
 				return
-			case t := <-ticker.C:
+			case _ = <-ticker.C:
 				s.Discover()
-				fmt.Printf("%s - Discovered %d peers!\n", t.Local().Format(time.RFC3339), len(s.DiscoveredPeers))
+				n.Log.Infof("Discovered %d peers!", len(s.DiscoveredPeers))
 			}
 		}
 	}(n)
