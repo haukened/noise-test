@@ -78,4 +78,5 @@ func (n *ServerNode) StartDiscovery(interval int) {
 // StopDiscovery stops the kademlia discovery process
 func (n *ServerNode) StopDiscovery() {
 	n.stopDiscovery <- true
+	n.DiscoveryActive = false
 }
