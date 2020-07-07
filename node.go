@@ -6,7 +6,7 @@ import (
 
 	"github.com/perlin-network/noise"
 	"github.com/perlin-network/noise/kademlia"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 // ServerNode holds all required information and options for a distributed chat node service
@@ -17,22 +17,27 @@ type ServerNode struct {
 	DiscoveredPeers []noise.ID
 	DiscoveryActive bool
 	stopDiscovery   chan bool
-	Log             *logrus.Logger
+	Log             *zap.SugaredLogger
 }
 
 // ServerArgs holds all configuration options for the server
 type ServerArgs struct {
-	nodeOpts    []noise.NodeOption
-	peerAddress string
+	NodeOpts    []noise.NodeOption
+	PeerAddress string
+	Logger      *zap.Logger
 }
 
 // Init creates a new node with the specified options, with a bound discovery protocol
 func (n *ServerNode) Init(opts ServerArgs) error {
 	n.stopDiscovery = make(chan bool)
-	n.DiscoveryPeer = opts.peerAddress
+	n.DiscoveryPeer = opts.PeerAddress
+	if opts.Logger != nil {
+		n.Log = opts.Logger.Sugar()
+		opts.NodeOpts = append(opts.NodeOpts, noise.WithNodeLogger(opts.Logger))
+	}
 	var err error
 	// initialize the host
-	n.Host, err = noise.NewNode(opts.nodeOpts...)
+	n.Host, err = noise.NewNode(opts.NodeOpts...)
 	if err != nil {
 		return err
 	}
@@ -65,17 +70,18 @@ func (n *ServerNode) StartDiscovery(interval int) {
 	n.Log.Info("peer discovery is starting")
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	go func(s *ServerNode) {
+	outer:
 		for {
 			select {
 			case <-n.stopDiscovery:
-				return
+				break outer
 			case _ = <-ticker.C:
 				s.Discover()
 				n.Log.Debugf("discovered %d peers", len(s.DiscoveredPeers))
 			}
 		}
+		n.Log.Info("peer discovery stopped")
 	}(n)
-	n.Log.Info("peer discovery stopped")
 }
 
 // StopDiscovery stops the kademlia discovery process

@@ -8,8 +8,8 @@ import (
 
 	"github.com/haukened/waiter"
 	"github.com/perlin-network/noise"
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
+	"go.uber.org/zap"
 )
 
 // TODO: Remove designation and update this at build-time
@@ -69,8 +69,6 @@ func run(args []string, stdout, stderr io.Writer) error {
 }
 
 func actStartNode(c *cli.Context) error {
-	var serverArgs ServerArgs
-
 	var (
 		// This gets the named variables from the context of the parsed args
 		LocalAddress  = c.String("address")
@@ -79,19 +77,35 @@ func actStartNode(c *cli.Context) error {
 		RemotePort    = c.Uint("remote-port")
 		Debug         = c.Bool("debug")
 	)
+	// first set up the logger
+	var logger *zap.Logger
+
+	var err error
+	if Debug {
+		logger, err = zap.NewDevelopment()
+	} else {
+		logger, err = zap.NewProduction()
+	}
+	if err != nil {
+		fmt.Fprint(os.Stderr, "Unable to initialize zap logger. Exiting.")
+		os.Exit(1)
+	}
+	defer logger.Sync()
+	logger.Debug("Zap logger started in debug mode")
 
 	// Verify local address is a valid address if specified
+	var serverArgs ServerArgs
 	nodeIP := net.ParseIP(LocalAddress)
 	if nodeIP == nil && LocalAddress != "" {
 		return fmt.Errorf("%s is not a valid ip address", LocalAddress)
 	}
-	serverArgs.nodeOpts = append(serverArgs.nodeOpts, noise.WithNodeBindHost(nodeIP))
+	serverArgs.NodeOpts = append(serverArgs.NodeOpts, noise.WithNodeBindHost(nodeIP))
 
 	// Verify local port is a valid port
 	if LocalPort == 0 || LocalPort > 65535 {
 		return fmt.Errorf("%d is not a valid port number (1-65535)", LocalPort)
 	}
-	serverArgs.nodeOpts = append(serverArgs.nodeOpts, noise.WithNodeBindPort(uint16(LocalPort)))
+	serverArgs.NodeOpts = append(serverArgs.NodeOpts, noise.WithNodeBindPort(uint16(LocalPort)))
 
 	// Verify peer port is a valid port
 	if RemotePort == 0 || RemotePort > 65535 {
@@ -107,20 +121,12 @@ func actStartNode(c *cli.Context) error {
 		}
 		fmt.Fprintf(c.App.ErrWriter, "Peer %s resolves to %s\n", RemoteAddress, addr[0].String())
 	}
-	serverArgs.peerAddress = fmt.Sprintf("%s:%d", RemoteAddress, RemotePort)
+	serverArgs.PeerAddress = fmt.Sprintf("%s:%d", RemoteAddress, RemotePort)
+	serverArgs.Logger = logger
 
 	var me ServerNode
-	me.Log = logrus.New()
-	me.Log.Formatter = &logrus.TextFormatter{DisableColors: true}
-	me.Log.SetOutput(c.App.Writer)
 
-	// Set log level to info by default
-	me.Log.Level = logrus.InfoLevel
-	if Debug {
-		me.Log.Level = logrus.DebugLevel
-	}
-
-	err := me.Init(serverArgs)
+	err = me.Init(serverArgs)
 	if err != nil {
 		return err
 	}
@@ -134,6 +140,5 @@ func actStartNode(c *cli.Context) error {
 	waiter.WaitForSignal(os.Interrupt)
 	me.StopDiscovery()
 	fmt.Println("Exiting.")
-
 	return nil
 }
