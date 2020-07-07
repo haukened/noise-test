@@ -33,7 +33,9 @@ func (n *ServerNode) Init(opts ServerArgs) error {
 	n.DiscoveryPeer = opts.PeerAddress
 	if opts.Logger != nil {
 		n.Log = opts.Logger.Sugar()
-		opts.NodeOpts = append(opts.NodeOpts, noise.WithNodeLogger(opts.Logger))
+		// enabling WithNodeLogger() causes the node to echo private keys to the logs
+		// DANGER DANGER DANGER
+		// opts.NodeOpts = append(opts.NodeOpts, noise.WithNodeLogger(opts.Logger))
 	}
 	var err error
 	// initialize the host
