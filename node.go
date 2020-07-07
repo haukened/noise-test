@@ -59,8 +59,10 @@ func (n *ServerNode) Discover() {
 // StartDiscovery runs the kademlia discovery process, every n number of seconds
 func (n *ServerNode) StartDiscovery(interval int) {
 	if n.DiscoveryActive {
+		n.Log.Debug("peer discovery attempeted to start, but was already running")
 		return
 	}
+	n.Log.Info("peer discovery is starting")
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	go func(s *ServerNode) {
 		for {
@@ -69,14 +71,16 @@ func (n *ServerNode) StartDiscovery(interval int) {
 				return
 			case _ = <-ticker.C:
 				s.Discover()
-				n.Log.Infof("Discovered %d peers!", len(s.DiscoveredPeers))
+				n.Log.Debugf("discovered %d peers", len(s.DiscoveredPeers))
 			}
 		}
 	}(n)
+	n.Log.Info("peer discovery stopped")
 }
 
 // StopDiscovery stops the kademlia discovery process
 func (n *ServerNode) StopDiscovery() {
+	n.Log.Debug("peer discovery stopping")
 	n.stopDiscovery <- true
 	n.DiscoveryActive = false
 }
