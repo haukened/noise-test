@@ -1,8 +1,12 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 
@@ -56,6 +60,18 @@ func run(args []string, stdout, stderr io.Writer) error {
 				Aliases: []string{"d"},
 				Usage:   "Enable debug mode.",
 			},
+			&cli.PathFlag{
+				Name:      "load-private-key",
+				Aliases:   []string{"loadkey", "l"},
+				Usage:     "Specify private key. Otherwise, noise will generate a new one.",
+				TakesFile: true,
+			},
+			&cli.PathFlag{
+				Name:      "make-private-key",
+				Aliases:   []string{"mk"},
+				Usage:     "Creates an ed25519 private key at the specified path and exits.",
+				TakesFile: true,
+			},
 		},
 
 		Action: actStartNode,
@@ -76,7 +92,10 @@ func actStartNode(c *cli.Context) error {
 		RemoteAddress = c.String("remote-address")
 		RemotePort    = c.Uint("remote-port")
 		Debug         = c.Bool("debug")
+		KeyPath       = c.Path("load-private-key")
+		MakeKeypath   = c.Path("make-private-key")
 	)
+
 	// first set up the logger
 	var logger *zap.Logger
 
@@ -92,6 +111,16 @@ func actStartNode(c *cli.Context) error {
 	}
 	defer logger.Sync()
 	logger.Debug("Zap logger started in debug mode")
+
+	// if we're asked to make a key, do that and exit
+	if MakeKeypath != "" {
+		err := makeNewKeys(MakeKeypath)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("new private key written to %s\nExiting\n", MakeKeypath)
+		os.Exit(0)
+	}
 
 	// Verify local address is a valid address if specified
 	var serverArgs ServerArgs
@@ -122,7 +151,29 @@ func actStartNode(c *cli.Context) error {
 		fmt.Fprintf(c.App.ErrWriter, "Peer %s resolves to %s\n", RemoteAddress, addr[0].String())
 	}
 	serverArgs.PeerAddress = fmt.Sprintf("%s:%d", RemoteAddress, RemotePort)
+
+	// set the logger
 	serverArgs.Logger = logger
+
+	// if the user set a private key, load it
+	if KeyPath != "" {
+		if _, err := os.Stat(KeyPath); !os.IsNotExist(err) {
+			// path/to/whatever exists
+			data, err := ioutil.ReadFile(KeyPath)
+			if err != nil {
+				return errors.New("Unable to read private key file")
+			}
+			// now convert to a noise private key
+			noiseKey, err := noise.LoadKeysFromHex(string(data))
+			if err != nil {
+				return fmt.Errorf("noise is unable to load the hex key from file: %+v", err)
+			}
+			logger.Sugar().Infow("successfully loaded private key",
+				"publickey", noiseKey.Public().String(),
+			)
+			serverArgs.NodeOpts = append(serverArgs.NodeOpts, noise.WithNodePrivateKey(noiseKey))
+		}
+	}
 
 	var me ServerNode
 
@@ -140,5 +191,19 @@ func actStartNode(c *cli.Context) error {
 	waiter.WaitForSignal(os.Interrupt)
 	me.StopDiscovery()
 	fmt.Println("Exiting.")
+	return nil
+}
+
+func makeNewKeys(path string) error {
+	_, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		return err
+	}
+	data := make([]byte, hex.EncodedLen(len(priv)))
+	hex.Encode(data, priv)
+	err = ioutil.WriteFile(path, data, 0600)
+	if err != nil {
+		return err
+	}
 	return nil
 }
