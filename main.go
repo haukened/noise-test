@@ -118,7 +118,7 @@ func actStartNode(c *cli.Context) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("new private key written to %s\nExiting\n", MakeKeypath)
+		fmt.Printf("new ed25519 private key written to %s\nExiting\n", MakeKeypath)
 		os.Exit(0)
 	}
 
