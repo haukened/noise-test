@@ -11,26 +11,29 @@ import (
 
 // ServerNode holds all required information and options for a distributed chat node service
 type ServerNode struct {
-	Host            *noise.Node
-	Kademlia        *kademlia.Protocol
-	DiscoveryPeer   string
-	DiscoveredPeers []noise.ID
-	DiscoveryActive bool
-	stopDiscovery   chan bool
-	Log             *zap.SugaredLogger
+	Host              *noise.Node
+	Kademlia          *kademlia.Protocol
+	DiscoveryPeer     string
+	DiscoveredPeers   []noise.ID
+	DiscoveryActive   bool
+	DiscoveryInterval int
+	stopDiscovery     chan bool
+	Log               *zap.SugaredLogger
 }
 
 // ServerArgs holds all configuration options for the server
 type ServerArgs struct {
-	NodeOpts    []noise.NodeOption
-	PeerAddress string
-	Logger      *zap.Logger
+	NodeOpts          []noise.NodeOption
+	PeerAddress       string
+	Logger            *zap.Logger
+	DiscoveryInterval int
 }
 
 // Init creates a new node with the specified options, with a bound discovery protocol
 func (n *ServerNode) Init(opts ServerArgs) error {
 	n.stopDiscovery = make(chan bool)
 	n.DiscoveryPeer = opts.PeerAddress
+	n.DiscoveryInterval = opts.DiscoveryInterval
 	if opts.Logger != nil {
 		n.Log = opts.Logger.Sugar()
 		// enabling WithNodeLogger() causes the node to echo private keys to the logs
@@ -64,13 +67,13 @@ func (n *ServerNode) Discover() {
 }
 
 // StartDiscovery runs the kademlia discovery process, every n number of seconds
-func (n *ServerNode) StartDiscovery(interval int) {
+func (n *ServerNode) StartDiscovery() {
 	if n.DiscoveryActive {
 		n.Log.Debug("peer discovery attempeted to start, but was already running")
 		return
 	}
 	n.Log.Info("peer discovery is starting")
-	ticker := time.NewTicker(time.Duration(interval) * time.Second)
+	ticker := time.NewTicker(time.Duration(n.DiscoveryInterval) * time.Second)
 	go func(s *ServerNode) {
 	outer:
 		for {

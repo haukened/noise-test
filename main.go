@@ -72,8 +72,13 @@ func run(args []string, stdout, stderr io.Writer) error {
 				Usage:     "Creates an ed25519 private key at the specified path and exits.",
 				TakesFile: true,
 			},
+			&cli.IntFlag{
+				Name:    "discovery-interval",
+				Aliases: []string{"di"},
+				Usage:   "Configures the interval, in seconds, between peer discovery attempts.",
+				Value:   5,
+			},
 		},
-
 		Action: actStartNode,
 	}
 
@@ -87,13 +92,14 @@ func run(args []string, stdout, stderr io.Writer) error {
 func actStartNode(c *cli.Context) error {
 	var (
 		// This gets the named variables from the context of the parsed args
-		LocalAddress  = c.String("address")
-		LocalPort     = c.Uint("port")
-		RemoteAddress = c.String("remote-address")
-		RemotePort    = c.Uint("remote-port")
-		Debug         = c.Bool("debug")
-		KeyPath       = c.Path("load-private-key")
-		MakeKeypath   = c.Path("make-private-key")
+		LocalAddress      = c.String("address")
+		LocalPort         = c.Uint("port")
+		RemoteAddress     = c.String("remote-address")
+		RemotePort        = c.Uint("remote-port")
+		Debug             = c.Bool("debug")
+		KeyPath           = c.Path("load-private-key")
+		MakeKeypath       = c.Path("make-private-key")
+		DiscoveryInterval = c.Int("discovery-interval")
 	)
 
 	// first set up the logger
@@ -152,8 +158,9 @@ func actStartNode(c *cli.Context) error {
 	}
 	serverArgs.PeerAddress = fmt.Sprintf("%s:%d", RemoteAddress, RemotePort)
 
-	// set the logger
+	// set the self-explantory options
 	serverArgs.Logger = logger
+	serverArgs.DiscoveryInterval = DiscoveryInterval
 
 	// if the user set a private key, load it
 	if KeyPath != "" {
@@ -187,7 +194,7 @@ func actStartNode(c *cli.Context) error {
 		return err
 	}
 	// run discovery and see who you find
-	me.StartDiscovery(1)
+	me.StartDiscovery()
 	waiter.WaitForSignal(os.Interrupt)
 	me.StopDiscovery()
 	fmt.Println("Exiting.")
