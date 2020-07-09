@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/perlin-network/noise"
+	"github.com/perlin-network/noise/gossip"
 	"github.com/perlin-network/noise/kademlia"
 	"go.uber.org/zap"
 )
@@ -12,7 +14,8 @@ import (
 // ServerNode holds all required information and options for a distributed chat node service
 type ServerNode struct {
 	Host              *noise.Node
-	Kademlia          *kademlia.Protocol
+	Overlay           *kademlia.Protocol
+	Hub               *gossip.Protocol
 	DiscoveryPeer     string
 	DiscoveredPeers   []noise.ID
 	DiscoveryActive   bool
@@ -38,7 +41,7 @@ func (n *ServerNode) Init(opts ServerArgs) error {
 		n.Log = opts.Logger.Sugar()
 		// enabling WithNodeLogger() causes the node to echo private keys to the logs
 		// DANGER DANGER DANGER
-		// opts.NodeOpts = append(opts.NodeOpts, noise.WithNodeLogger(opts.Logger))
+		opts.NodeOpts = append(opts.NodeOpts, noise.WithNodeLogger(opts.Logger))
 	}
 	var err error
 	// initialize the host
@@ -47,9 +50,22 @@ func (n *ServerNode) Init(opts ServerArgs) error {
 		return err
 	}
 	// create a new kademlia discovery protocol
-	n.Kademlia = kademlia.New()
-	// bind the discovery protocol to the host
-	n.Host.Bind(n.Kademlia.Protocol())
+	n.Overlay = kademlia.New()
+	// create a new gossip protocol
+	n.Hub = gossip.New(n.Overlay,
+		gossip.WithEvents(
+			gossip.Events{
+				OnGossipReceived: func(sender noise.ID, data []byte) error {
+					fmt.Printf("Got a gossip from %s\n", sender.ID.String())
+					return nil
+				},
+			},
+		))
+	// bind the protocols to the host
+	n.Host.Bind(
+		n.Overlay.Protocol(),
+		n.Hub.Protocol(),
+	)
 	return nil
 }
 
@@ -63,7 +79,7 @@ func (n *ServerNode) Discover() {
 	if n.DiscoveryPeer != "" {
 		n.Host.Ping(context.TODO(), n.DiscoveryPeer)
 	}
-	n.DiscoveredPeers = n.Kademlia.Discover()
+	n.DiscoveredPeers = n.Overlay.Discover()
 }
 
 // StartDiscovery runs the kademlia discovery process, every n number of seconds
@@ -78,14 +94,14 @@ func (n *ServerNode) StartDiscovery() {
 	outer:
 		for {
 			select {
-			case <-n.stopDiscovery:
+			case <-s.stopDiscovery:
 				break outer
 			case _ = <-ticker.C:
 				s.Discover()
-				n.Log.Debugf("discovered %d peers", len(s.DiscoveredPeers))
+				s.Log.Debugf("discovered %d peers", len(s.DiscoveredPeers))
 			}
 		}
-		n.Log.Info("peer discovery stopped")
+		s.Log.Info("peer discovery stopped")
 	}(n)
 }
 
@@ -95,3 +111,16 @@ func (n *ServerNode) StopDiscovery() {
 	n.stopDiscovery <- true
 	n.DiscoveryActive = false
 }
+
+// SendGossip sends a gossip message to the entire overlay network
+func (n *ServerNode) SendGossip(msg string) {
+	n.Hub.Push(context.TODO(), []byte(msg))
+}
+
+// HandleGossip handles incoming gossip messages from the network
+func HandleGossip(sender noise.ID, data []byte) error {
+	fmt.Printf("got a gossip from %s\n", sender.ID.String())
+	return nil
+}
+
+// SendMessage sends a message to a specific node

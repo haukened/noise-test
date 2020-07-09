@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"time"
 
 	"github.com/haukened/waiter"
 	"github.com/perlin-network/noise"
@@ -195,6 +197,17 @@ func actStartNode(c *cli.Context) error {
 	}
 	// run discovery and see who you find
 	me.StartDiscovery()
+
+	go func(s *ServerNode) {
+		ticker := time.NewTicker(time.Second)
+		for {
+			select {
+			case _ = <-ticker.C:
+				s.Hub.Push(context.TODO(), []byte("hello"))
+				s.Log.Debug("sent test gossip")
+			}
+		}
+	}(&me)
 	waiter.WaitForSignal(os.Interrupt)
 	me.StopDiscovery()
 	fmt.Println("Exiting.")
